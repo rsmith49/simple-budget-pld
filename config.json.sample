@@ -1,0 +1,12 @@
+{
+  "settings": {
+    "transformations": [
+      "add_month",
+      "add_cat_1",
+      "add_cat_2",
+      "important_cols"
+    ],
+    "remove_transactions": [],
+    "custom_category_map": {}
+  }
+}
