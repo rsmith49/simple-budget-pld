@@ -64,15 +64,24 @@ def update_categories(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     df = df.copy()
     for new_category, search_terms in config['settings']['custom_category_map'].items():
-        for search_term in search_terms:
+        bool_key = df.apply(lambda row: False, axis=1)
+
+        # IMPORTANT: Sorting in reverse so that negations show up last
+        for search_term in sorted(search_terms, reverse=True):
             if type(search_term) is str:
-                bool_key = _text_search_bool_key(df, search_term)
+
+                # Negations require an &= to overwrite any non-negation rules
+                if search_term[0] == '!':
+                    bool_key &= ~(_text_search_bool_key(df, search_term[1:]))
+
+                else:
+                    bool_key |= _text_search_bool_key(df, search_term)
 
             else:
-                bool_key = df['amount'] == search_term
+                bool_key |= df['amount'] == search_term
 
-            df.loc[bool_key, 'category_1'] = new_category
-            df.loc[bool_key, 'category_2'] = None
+        df.loc[bool_key, 'category_1'] = new_category
+        df.loc[bool_key, 'category_2'] = None
 
     return df
 

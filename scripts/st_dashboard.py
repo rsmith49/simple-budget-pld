@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from dotenv import load_dotenv
 from plaid.api_client import ApiClient
+from plaid.exceptions import ApiException
 from pathlib import Path
 from traceback import format_exc
 from urllib.error import URLError
@@ -91,23 +92,64 @@ def single_inc_spending_summary(df: pd.DataFrame, date_inc_key: str, curr_date: 
         )
 
 
+def df_for_certain_categories(df: pd.DataFrame) -> pd.DataFrame:
+    """Helper function to get a DF filtered by any user selected categories"""
+    categories = st.multiselect(
+        f"Select any categories to only see spending for",
+        options=sorted(df['category_1'].unique()),
+        default=[],
+    )
+
+    if len(categories) > 0:
+        bool_key = df['category_1'] == 'NOT_A CATEGORY'
+        for cat in categories:
+            bool_key = bool_key | (df['category_1'] == cat)
+        df = df[bool_key]
+
+    return df
+
+
 def main():
     try:
-        df = get_transaction_data().copy()
+        try:
+            df = get_transaction_data().copy()
+        except ApiException as e:
+            # TODO: Check e for if it is item expiration
+            st.write("Error accessing Plaid - using old transaction data for now")
+            try:
+                df = pd.read_csv(EXISTING_TRANSACTIONS_FILE)
+            except FileNotFoundError:
+                st.write("Could not find existing transactions file - cannot run this app")
+                raise e
+
         df = transform_pipeline(df)
 
         # Organizing Page
         st.write("# Budget Display")
-        date_inc = st.selectbox(
+        date_inc = st.sidebar.selectbox(
             f"Select the timespan (week, month, year) that you would like to use to view your spending by",
             ["Month", "Week", "Year"],
         )
         date_inc_key = date_inc.lower()
-        categories_to_ignore = st.multiselect(
+        categories_to_ignore = st.sidebar.multiselect(
             "Any categories to ignore in calculations",
             options=sorted(df["category_1"].unique()),
             default=["Income"]
         )
+        start_date = st.sidebar.select_slider(
+            f"Enter a Start Date for viewing your spending",
+            sorted(df["date"].unique())
+        )
+        end_date = st.sidebar.select_slider(
+            f"Enter an End Date to view your spending until",
+            sorted(df["date"].unique()),
+            value=df["date"].max()
+        )
+
+        if start_date is not None:
+            df = df[df['date'] >= start_date]
+        if end_date is not None:
+            df = df[df['date'] <= end_date]
 
         # Preprocessing
         if len(categories_to_ignore):
@@ -126,11 +168,16 @@ def main():
         single_inc_spending_summary(df, date_inc_key, curr_date)
 
         st.write(f"## {date_inc}ly Spending History")
-        st.bar_chart(df.groupby(date_inc_key).sum("amount").sort_index(ascending=False))
+        history_df = df_for_certain_categories(df)
+        st.bar_chart(history_df.groupby(date_inc_key).sum("amount").sort_index(ascending=False))
 
         st.write(f"## Single {date_inc} in Spending")
         available_date_incs = sorted(df[date_inc_key].unique(), reverse=True)
-        curr_date = st.selectbox(f"Pick a {date_inc}", options=available_date_incs)
+        curr_date = st.selectbox(
+            f"Pick a {date_inc}",
+            options=available_date_incs,
+            format_func=lambda label: f"{label}      ({df[df[date_inc_key] == label]['amount'].sum():,.2f})"
+        )
         single_inc_spending_summary(df, date_inc_key, curr_date)
 
         st.write(f"## Category by {date_inc}ly Breakdown")
