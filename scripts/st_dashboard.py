@@ -111,6 +111,8 @@ def df_for_certain_categories(df: pd.DataFrame) -> pd.DataFrame:
 
 def main():
     try:
+        st.set_page_config(initial_sidebar_state="collapsed")
+
         try:
             df = get_transaction_data().copy()
         except ApiException as e:
@@ -163,14 +165,6 @@ def main():
 
         # Data Viz
 
-        st.write(f"## Current {date_inc} in Spending")
-        curr_date = df[date_inc_key].max()
-        single_inc_spending_summary(df, date_inc_key, curr_date)
-
-        st.write(f"## {date_inc}ly Spending History")
-        history_df = df_for_certain_categories(df)
-        st.bar_chart(history_df.groupby(date_inc_key).sum("amount").sort_index(ascending=False))
-
         st.write(f"## Single {date_inc} in Spending")
         available_date_incs = sorted(df[date_inc_key].unique(), reverse=True)
         curr_date = st.selectbox(
@@ -180,7 +174,11 @@ def main():
         )
         single_inc_spending_summary(df, date_inc_key, curr_date)
 
-        st.write(f"## Category by {date_inc}ly Breakdown")
+        st.write(f"## {date_inc}ly Spending History")
+        history_df = df_for_certain_categories(df)
+        st.bar_chart(history_df.groupby(date_inc_key).sum("amount").sort_index(ascending=False))
+
+        st.write(f"## Most Expensive Single {date_inc} Categories")
         write_df(top_vendors(df, groupby=[date_inc_key, 'category_1']))
 
         st.write("## All Transactions")
