@@ -81,3 +81,24 @@ def get_transactions_df(start_date, end_date):
                 trans_data[key].append(None)
 
     return pd.DataFrame(trans_data)
+
+
+# TODO: Figure out how to update the link tokens
+def create_link_token():
+    try:
+        request = LinkTokenCreateRequest(
+            access_token="",
+            client_name="Plaid Quickstart",
+            country_codes=list(map(lambda x: CountryCode(x), PLAID_COUNTRY_CODES)),
+            language='en',
+            user=LinkTokenCreateRequestUser(
+                client_user_id=str(time.time())
+            ),
+            redirect_uri="",
+        )
+
+        # create link token
+        response = client.link_token_create(request)
+        return jsonify(response.to_dict())
+    except plaid.ApiException as e:
+        return json.loads(e.body)
