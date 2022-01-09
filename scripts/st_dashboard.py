@@ -5,6 +5,7 @@ import streamlit as st
 import sys
 
 from datetime import datetime
+from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 from plaid.api_client import ApiClient
 from plaid.exceptions import ApiException
@@ -21,6 +22,7 @@ from src.user_modifications import transform_pipeline
 from src.views import top_vendors
 
 EXISTING_TRANSACTIONS_FILE = f"{Path.home()}/.ry-n-shres-budget-app/all_transactions.csv"
+TRANSACTION_GRACE_BUFFER = relativedelta(days=10)  # How far before latest transaction to pull from
 
 
 @st.cache(
@@ -29,6 +31,7 @@ EXISTING_TRANSACTIONS_FILE = f"{Path.home()}/.ry-n-shres-budget-app/all_transact
 def get_transaction_data():
     try:
         existing_df = pd.read_csv(EXISTING_TRANSACTIONS_FILE)
+        existing_df['date'] = existing_df['date'].astype(str)
     except FileNotFoundError:
         existing_df = None
 
@@ -37,34 +40,30 @@ def get_transaction_data():
 
     if existing_df is not None:
         latest_date = existing_df['date'].max()
-        latest_transactions_df = get_transactions_df(latest_date, now)
-        # So that we can set columns
-        latest_transactions_df = latest_transactions_df.copy()
-
-        # Fix for different pandas versions reading datetime objects instead of strings
-        existing_df['date'] = existing_df['date'].astype(str)
+        start_date = (datetime.strptime(latest_date, '%Y-%m-%d') - TRANSACTION_GRACE_BUFFER).strftime('%Y-%m-%d')
+        latest_transactions_df = get_transactions_df(start_date, now)
         latest_transactions_df['date'] = latest_transactions_df['date'].astype(str)
 
-        # Make sure to remove any duplicates from the final date on the original
-        def key_col(df):
-            return df['date'] + df['name'] + df['amount'].astype(str)
-
-        last_date_transactions = existing_df[existing_df['date'] == latest_date].copy()
-        last_date_transactions['key_col'] = key_col(last_date_transactions)
-        latest_transactions_df['key_col'] = key_col(latest_transactions_df)
-
-        latest_transactions_df = latest_transactions_df[
-            ~(latest_transactions_df['key_col'].isin(last_date_transactions['key_col']))
-        ]
-
-        latest_transactions_df = latest_transactions_df.drop('key_col', axis=1)
-        all_transactions_df = pd.concat([existing_df, latest_transactions_df])
+        all_transactions_df = pd.concat([
+            existing_df[existing_df['date'] < start_date],
+            latest_transactions_df
+        ])
 
     else:
-        all_transactions_df = get_transactions_df('2016-01-01', '2021-06-01')
+        all_transactions_df = get_transactions_df(
+            '2016-01-01',
+            now
+        )
 
     os.makedirs(EXISTING_TRANSACTIONS_FILE[:EXISTING_TRANSACTIONS_FILE.rfind("/")], exist_ok=True)
     all_transactions_df.to_csv(EXISTING_TRANSACTIONS_FILE, index=False)
+
+    # Fix for Streamlit Cache issues
+    all_transactions_df = all_transactions_df.drop(
+        ['payment_meta', 'location'],
+        axis=1
+    )
+    all_transactions_df['category'] = all_transactions_df['category'].astype(str)
 
     return all_transactions_df
 
@@ -77,6 +76,11 @@ def write_df(df: pd.DataFrame):
             for col_name in ["amount", "Total Spent"]
         })
     )
+
+# TODO: Make non-budgeted columns show up on bar chart, just without ticks
+# TODO: Make all-time a budget period option (figure out what to do about this - maybe it only shows up for one month?)
+# TODO: Allow you to set custom start date for your budget period (i.e. make your monthly spending start on the 3rd)
+# TODO: Fix the duplicate charge issue with pending charges
 
 
 def single_inc_spending_summary(df: pd.DataFrame, date_inc_key: str, curr_date: str, is_current: bool = False) -> None:
