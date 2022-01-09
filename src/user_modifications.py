@@ -4,13 +4,9 @@ This file contains the code for users making modifications to the categories
 import pandas as pd
 
 from ast import literal_eval
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
 from typing import Union
 
 from src.utils import get_config
-
-PENDING_DAYS_ALLOWED = 5
 
 
 def add_col(df, col_name, apply_func):
@@ -33,8 +29,6 @@ TRANSFORMATIONS = {
     'add_month': lambda df: add_col(df, 'month', lambda row: row['date'][:7]),
     'add_cat_1': lambda df: add_col(df, 'category_1', lambda row: str_or_list_to_list(row['category'])[0] if row['category'] else None),
     'add_cat_2': lambda df: add_col(df, 'category_2', lambda row: str_or_list_to_list(row['category'])[1] if len(str_or_list_to_list(row['category'])) > 1 else None),
-    # NOTE: This probably won't work super well (some charges appear before latest transaction), but saving it in case it's useful later
-    'remove_pending_charges': lambda df: df[(df['date'] > (datetime.now() - relativedelta(days=PENDING_DAYS_ALLOWED)).strftime('%Y-%m-%d')) | ~(df['pending'])],
     'important_cols': lambda df: df[['date', 'month', 'name', 'merchant_name', 'category_1', 'category_2', 'payment_channel', 'amount']],
     'remove_transfers': lambda df: df[df['name'] != ''],
 }
