@@ -57,6 +57,13 @@ def remove_transactions(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     return df
 
 
+def remove_accounts(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Remove transactions from specified account IDs"""
+    for account_id in config['settings'].get('remove_account_ids', []):
+        df = df[df["account_id"] != account_id]
+    return df
+
+
 def update_categories(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Updates categories based on any instructions in config
 
@@ -89,6 +96,8 @@ def update_categories(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 def transform_pipeline(df: pd.DataFrame):
     """Runs the full transformation pipeline including all user specifications"""
     config = get_config()
+    # This has to be before transform bc we lose account_id column
+    df = remove_accounts(df, config)
     df = transform_df_by_funcs(df, config)
     df = remove_transactions(df, config)
 
