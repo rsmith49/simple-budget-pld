@@ -61,7 +61,7 @@ def remove_accounts(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Remove transactions from specified account IDs"""
     for account_id in config['settings'].get('remove_account_ids', []):
         df = df[df["account_id"] != account_id]
-    return df
+    return df.copy()
 
 
 def update_categories(df: pd.DataFrame, config: dict) -> pd.DataFrame:
