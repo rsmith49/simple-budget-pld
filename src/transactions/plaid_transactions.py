@@ -12,24 +12,32 @@ from plaid.api import plaid_api
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
 from plaid.model.transactions_get_request import TransactionsGetRequest
 
-from .utils import get_config
+from src.utils import get_config
 
 
-creds = get_config()
+_plaid_client = None
 
 
-plaid_config = plaid.Configuration(
-    host=plaid.Environment.Development,
-    api_key=dict(
-        clientId=creds['client_id'],
-        secret=creds['secret']
-    )
-)
-client = plaid_api.PlaidApi(plaid.ApiClient(plaid_config))
+def get_plaid_client():
+    global _plaid_client
+    if _plaid_client is None:
+        creds = get_config()
+        plaid_config = plaid.Configuration(
+            host=plaid.Environment.Development,
+            api_key=dict(
+                clientId=creds['client_id'],
+                secret=creds['secret']
+            )
+        )
+        _plaid_client = plaid_api.PlaidApi(plaid.ApiClient(plaid_config))
+
+    return _plaid_client
 
 
 def get_transactions(start_date: str, end_date: str, return_metadata: bool = False):
     all_transactions = []
+    creds = get_config()
+    client = get_plaid_client()
 
     transation_args = dict(
         access_token=creds['access_token'],

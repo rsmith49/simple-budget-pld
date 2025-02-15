@@ -36,7 +36,15 @@ TRANSFORMATIONS = {
 
 def _text_search_bool_key(df: pd.DataFrame, term: str) -> pd.Series:
     """Helper to return a boolean series of if the term is in df['name']"""
-    return df['name'].apply(lambda x: x.find(term) != -1)
+    transaction_cols_to_check = ["name"]
+    if "merchant_name" in df.columns:
+        transaction_cols_to_check.append("merchant_name")
+
+    bool_key = df["name"].apply(lambda x: False)
+    for col in transaction_cols_to_check:
+        bool_key |= df[col].apply(lambda x: pd.notnull(x) and x.find(term) != -1)
+
+    return bool_key
 
 
 def transform_df_by_funcs(df: pd.DataFrame, config: dict) -> pd.DataFrame:
@@ -74,7 +82,7 @@ def update_categories(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         bool_key = df.apply(lambda row: False, axis=1)
 
         # IMPORTANT: Sorting in reverse so that negations show up last
-        for search_term in sorted(search_terms, reverse=True):
+        for search_term in sorted(search_terms, key=lambda x: str(x), reverse=True):
             if type(search_term) is str:
 
                 # Negations require an &= to overwrite any non-negation rules

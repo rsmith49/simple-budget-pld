@@ -5,7 +5,7 @@ sys.path.append(os.getcwd())
 
 from datetime import datetime
 
-from src.transactions import get_transactions_df
+from src.transactions.plaid_transactions import get_transactions_df
 from src.sheets import BudgetSpreadsheet, df_to_ws
 from src.user_modifications import transform_pipeline
 

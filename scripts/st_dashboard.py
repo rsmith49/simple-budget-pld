@@ -5,11 +5,9 @@ import streamlit as st
 import sys
 
 from datetime import datetime
-from dateutil.relativedelta import relativedelta
 from dotenv import load_dotenv
 from plaid.api_client import ApiClient
 from plaid.exceptions import ApiException
-from pathlib import Path
 from traceback import format_exc
 from urllib.error import URLError
 
@@ -17,53 +15,24 @@ sys.path.append(os.getcwd())
 load_dotenv()
 
 from src.budget import Budget
-from src.transactions import get_transactions_df
+from src.transactions.selection import maybe_pull_latest_transactions
 from src.user_modifications import transform_pipeline
 from src.views import top_vendors
 
-EXISTING_TRANSACTIONS_FILE = f"{Path.home()}/.ry-n-shres-budget-app/all_transactions.csv"
-TRANSACTION_GRACE_BUFFER = relativedelta(days=10)  # How far before latest transaction to pull from
+st.set_page_config(initial_sidebar_state="collapsed")
 
 
 @st.cache(
     hash_funcs={ApiClient: lambda *args, **kwargs: 0}
 )
 def get_transaction_data():
-    try:
-        existing_df = pd.read_csv(EXISTING_TRANSACTIONS_FILE)
-        existing_df['date'] = existing_df['date'].astype(str)
-    except FileNotFoundError:
-        existing_df = None
-
-    # Get Plaid output
-    now = datetime.now().strftime('%Y-%m-%d')
-
-    if existing_df is not None:
-        latest_date = existing_df['date'].max()
-        start_date = (datetime.strptime(latest_date, '%Y-%m-%d') - TRANSACTION_GRACE_BUFFER).strftime('%Y-%m-%d')
-        latest_transactions_df = get_transactions_df(start_date, now)
-        latest_transactions_df['date'] = latest_transactions_df['date'].astype(str)
-
-        all_transactions_df = pd.concat([
-            existing_df[existing_df['date'] < start_date],
-            latest_transactions_df
-        ])
-
-    else:
-        all_transactions_df = get_transactions_df(
-            '2016-01-01',
-            now
-        )
-
-    os.makedirs(EXISTING_TRANSACTIONS_FILE[:EXISTING_TRANSACTIONS_FILE.rfind("/")], exist_ok=True)
-    all_transactions_df.to_csv(EXISTING_TRANSACTIONS_FILE, index=False)
+    all_transactions_df = maybe_pull_latest_transactions()
 
     # Fix for Streamlit Cache issues
-    all_transactions_df = all_transactions_df.drop(
-        ['payment_meta', 'location'],
-        axis=1
-    )
-    all_transactions_df['category'] = all_transactions_df['category'].astype(str)
+    for col in ["payment_meta", "location"]:
+        if col in all_transactions_df.columns:
+            all_transactions_df = all_transactions_df.drop(col, axis=1)
+    all_transactions_df["category"] = all_transactions_df["category"].astype(str)
 
     return all_transactions_df
 
@@ -184,8 +153,6 @@ def df_for_certain_categories(df: pd.DataFrame) -> pd.DataFrame:
 
 def main():
     try:
-        st.set_page_config(initial_sidebar_state="collapsed")
-
         try:
             df = get_transaction_data().copy()
         except ApiException as e:
