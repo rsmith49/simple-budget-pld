@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import streamlit as st
 import sys
+from typing import List
 
 from datetime import datetime
 from dotenv import load_dotenv
@@ -18,6 +19,7 @@ from src.budget import Budget
 from src.transactions.selection import maybe_pull_latest_transactions
 from src.transactions.user_modifications import transform_pipeline
 from src.views import top_vendors
+from src.utils import get_config
 
 st.set_page_config(initial_sidebar_state="collapsed")
 
@@ -45,6 +47,37 @@ def write_df(df: pd.DataFrame):
             for col_name in ["amount", "Total Spent"]
         })
     )
+
+
+class DateInc:
+    def __init__(self, date_inc: str):
+        self.key = date_inc.lower()
+        self.label = date_inc[0].upper() + date_inc[1:]
+
+    def convert_iso_to_date_inc(self, date_str: str) -> str:
+        """Helper to convert ISO formatted date to the date increment we care about"""
+        if self.key == "week":
+            return datetime.strptime(date_str, '%Y-%m-%d').strftime('%Y-%V')
+        elif self.key == "month":
+            return date_str[:7]
+        elif self.key == "year":
+            return date_str[:4]
+        elif self.key == "day":
+            return date_str[:10]
+        else:
+            raise ValueError(f"Unrecognized date_inc: {self.key}")
+
+    def get_pd_range_freq(self) -> str:
+        if self.key == "week":
+            return "W-MON"  # Weeks starting on Monday
+        elif self.key == "month":
+            return "MS"  # Monthly Start
+        elif self.key == "year":
+            return "AS"  # Annual Start
+        elif self.key == "day":
+            return "D"
+        else:
+            raise ValueError(f"Unrecognized date_inc: {self.key}")
 
 # TODO: Make non-budgeted columns show up on bar chart, just without ticks
 # TODO: Make all-time a budget period option (figure out what to do about this - maybe it only shows up for one month?)
@@ -151,44 +184,56 @@ def df_for_certain_categories(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def get_dates(all_dates: pd.Series, date_inc: DateInc) -> List[str]:
+    return [
+        date_inc.convert_iso_to_date_inc(date.isoformat())
+        for date in pd.date_range(
+            all_dates.min(),
+            all_dates.max(),
+            freq=date_inc.get_pd_range_freq(),
+        )
+    ]
+
+
+def monthly_spending_summary(df: pd.DataFrame, date_inc: DateInc) -> pd.DataFrame:
+    grouped_df = df.groupby(date_inc.key).sum("amount")
+    dates = get_dates(grouped_df.index, date_inc)
+    new_df = pd.DataFrame([{"amount": 0.0} for _ in dates], index=dates)
+    new_df.loc[grouped_df.index, "amount"] = grouped_df["amount"]
+    return new_df.sort_index(ascending=False)
+
+
 def main():
     try:
-        try:
-            df = get_transaction_data().copy()
-        except ApiException as e:
-            # TODO: Check e for if it is item expiration
-            st.write("Error accessing Plaid - using old transaction data for now")
-            st.error(f"{e}")
-            try:
-                df = pd.read_csv(EXISTING_TRANSACTIONS_FILE)
-            except FileNotFoundError:
-                st.write("Could not find existing transactions file - cannot run this app")
-                raise e
-
+        df = get_transaction_data().copy()
         df = transform_pipeline(df)
+        config = get_config()
 
         # Organizing Page
         st.write("# Budget Display")
 
-        date_inc = st.sidebar.selectbox(
+        date_inc_str = st.sidebar.selectbox(
             f"Select the timespan (week, month, year) that you would like to use to view your spending by",
             ["Month", "Week", "Year"],
         )
-        date_inc_key = date_inc.lower()
-        date_inc_label = date_inc[0].upper() + date_inc[1:]
+        date_inc = DateInc(date_inc_str)
 
         categories_to_ignore = st.sidebar.multiselect(
             "Any categories to ignore in calculations",
             options=sorted(df["category_1"].unique()),
-            default=["Income"]
+            default=config["settings"].get(
+                "default_categories_to_ignore",
+                ["Income"],
+            ),
         )
+        all_dates = sorted(get_dates(df["date"], DateInc("Day")))
         start_date = st.sidebar.select_slider(
             f"Enter a Start Date for viewing your spending",
-            sorted(df["date"].unique())
+            all_dates
         )
         end_date = st.sidebar.select_slider(
             f"Enter an End Date to view your spending until",
-            sorted(df["date"].unique()),
+            all_dates,
             value=df["date"].max()
         )
 
@@ -209,26 +254,30 @@ def main():
 
         # Data Viz
 
-        st.write(f"## Single {date_inc_label} in Spending")
-        available_date_incs = sorted(df[date_inc_key].unique(), reverse=True)
+        st.write(f"## Single {date_inc.label} in Spending")
+        available_date_incs = sorted(df[date_inc.key].unique(), reverse=True)
         curr_date = st.selectbox(
-            f"Pick a {date_inc_label}",
+            f"Pick a {date_inc.label}",
             options=available_date_incs,
-            format_func=lambda label: f"{label}      ({df[df[date_inc_key] == label]['amount'].sum():,.2f})"
+            format_func=lambda label: f"{label}      ({df[df[date_inc.key] == label]['amount'].sum():,.2f})"
         )
         single_inc_spending_summary(
             df,
-            date_inc_key,
+            date_inc.key,
             curr_date,
             is_current=curr_date == max(available_date_incs)
         )
 
-        st.write(f"## {date_inc_label}ly Spending History")
+        st.write(f"## {date_inc.label}ly Spending History")
         history_df = df_for_certain_categories(df)
-        st.bar_chart(history_df.groupby(date_inc_key).sum("amount").sort_index(ascending=False))
+        # st.bar_chart(history_df.groupby(date_inc_key).sum("amount").sort_index(ascending=False))
+        st.bar_chart(monthly_spending_summary(history_df, date_inc))
 
-        st.write(f"## Most Expensive Single {date_inc} Categories")
-        write_df(top_vendors(df, groupby=[date_inc_key, 'category_1']))
+        st.write(f"## Most Expensive Single {date_inc.label} Categories")
+        write_df(top_vendors(df, groupby=[date_inc.key, 'category_1']))
+
+        st.write('## Top Merchants')
+        write_df(top_vendors(df, groupby='merchant_name'))
 
         st.write("## All Transactions")
         write_df(df)
