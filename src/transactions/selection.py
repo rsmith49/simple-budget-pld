@@ -30,6 +30,12 @@ empty_transaction_df = pd.DataFrame({
 })
 
 
+def local_transaction_clf_wrapper(df: pd.DataFrame) -> pd.DataFrame:
+    """Wrapping import so we don't have to import torch unless necessary"""
+    from .classification import classify_unknowns
+    return classify_unknowns(df)
+
+
 class TransactionMethod(str, Enum):
     PLAID = "plaid"
     SIMPLE_FIN = "simple_fin"
@@ -40,6 +46,8 @@ def get_transactions_wrapper(fn: GetTransactionsFnType, method: TransactionMetho
     def wrapped(start_date: str, end_date: str) -> pd.DataFrame:
         print(f"Running {method} for latest transactions...")
         df = fn(start_date, end_date)
+
+        # TODO: Write the file after we have saved the new transactions DF?
         with open(TRANSACTIONS_PULL_INFO_FILE, "w") as info_file:
             json.dump(
                 {
@@ -81,6 +89,8 @@ def get_transaction_method() -> GetTransactionsFnType:
 
 
 def maybe_pull_latest_transactions() -> pd.DataFrame:
+    config = get_config()
+
     try:
         existing_df = pd.read_csv(EXISTING_TRANSACTIONS_FILE)
         existing_df['date'] = existing_df['date'].astype(str)
@@ -125,6 +135,10 @@ def maybe_pull_latest_transactions() -> pd.DataFrame:
             now
         )
         all_transactions_df = latest_transactions_df
+
+    # Categorize locally if specified
+    if config["settings"]["use_local_categorization"]:
+        all_transactions_df = local_transaction_clf_wrapper(all_transactions_df)
 
     if len(all_transactions_df) == 0:
         raise ValueError("No transactions found in cache or from integration")

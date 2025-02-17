@@ -16,7 +16,7 @@ load_dotenv()
 
 from src.budget import Budget
 from src.transactions.selection import maybe_pull_latest_transactions
-from src.user_modifications import transform_pipeline
+from src.transactions.user_modifications import transform_pipeline
 from src.views import top_vendors
 
 st.set_page_config(initial_sidebar_state="collapsed")

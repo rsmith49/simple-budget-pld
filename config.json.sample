@@ -1,5 +1,6 @@
 {
   "settings": {
+    "use_local_categorization": true,
     "transformations": [
       "add_month",
       "add_cat_1",
@@ -7,6 +8,7 @@
       "important_cols"
     ],
     "remove_transactions": [],
-    "custom_category_map": {}
+    "custom_category_map": {},
+    "category_renaming_map": {}
   }
 }

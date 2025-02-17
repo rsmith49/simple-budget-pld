@@ -3,26 +3,14 @@ This file contains the code for users making modifications to the categories
 """
 import pandas as pd
 
-from ast import literal_eval
-from typing import Union
-
 from src.utils import get_config
+from .utils import str_or_list_to_list
 
 
 def add_col(df, col_name, apply_func):
     """Returns a df with an added column based on the apply_func"""
     df[col_name] = df.apply(apply_func, axis=1)
     return df
-
-
-def str_or_list_to_list(val: Union[str, list]) -> list:
-    """Helper to change a string or list to list"""
-    if type(val) is str:
-        return literal_eval(val)
-    elif type(val) is list:
-        return val
-    else:
-        raise ValueError(f"Unrecognized type: {type(val)} for {val}")
 
 
 TRANSFORMATIONS = {
@@ -52,7 +40,7 @@ def transform_df_by_funcs(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     for filter_name in config['settings']['transformations']:
         df = TRANSFORMATIONS[filter_name](df)
 
-    return df
+    return df.copy()
 
 
 def remove_transactions(df: pd.DataFrame, config: dict) -> pd.DataFrame:
@@ -97,6 +85,13 @@ def update_categories(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
         df.loc[bool_key, 'category_1'] = new_category
         df.loc[bool_key, 'category_2'] = None
+
+    # Rename any categories the user specified
+    df["category_1"] = df["category_1"].apply(
+        lambda category: config["settings"]["category_renaming_map"].get(
+            category, category
+        )
+    )
 
     return df
 

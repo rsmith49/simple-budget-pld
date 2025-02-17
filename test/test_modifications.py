@@ -1,7 +1,6 @@
 import pandas as pd
-import pytest
 
-from src.user_modifications import update_categories
+from src.transactions.user_modifications import update_categories
 
 SIMPLE_DF = pd.DataFrame({
     'category_1': ['Nothing', 'Nothing', 'Nothing', 'Nothing'],

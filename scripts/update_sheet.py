@@ -7,7 +7,7 @@ from datetime import datetime
 
 from src.transactions.plaid_transactions import get_transactions_df
 from src.sheets import BudgetSpreadsheet, df_to_ws
-from src.user_modifications import transform_pipeline
+from src.transactions.user_modifications import transform_pipeline
 
 
 def _transactions_df_pipeline(latest_date='2016-01-01'):
