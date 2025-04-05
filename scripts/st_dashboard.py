@@ -270,6 +270,7 @@ def main():
 
         st.write(f"## {date_inc.label}ly Spending History")
         history_df = df_for_certain_categories(df)
+        st.write(f"Total Spent: ${history_df['amount'].sum():,.2f}")
         # st.bar_chart(history_df.groupby(date_inc_key).sum("amount").sort_index(ascending=False))
         st.bar_chart(monthly_spending_summary(history_df, date_inc))
 

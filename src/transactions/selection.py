@@ -130,6 +130,9 @@ def maybe_pull_latest_transactions() -> pd.DataFrame:
         )
 
     else:
+        # Create directory early since the info file will try to be written as well
+        os.makedirs(EXISTING_TRANSACTIONS_FILE[:EXISTING_TRANSACTIONS_FILE.rfind("/")], exist_ok=True)
+
         latest_transactions_df = get_transactions_df(
             "2016-01-01",
             now
@@ -146,7 +149,6 @@ def maybe_pull_latest_transactions() -> pd.DataFrame:
     if len(latest_transactions_df) == 0:
         print("No new transactions found, using only existing cached data")
 
-    os.makedirs(EXISTING_TRANSACTIONS_FILE[:EXISTING_TRANSACTIONS_FILE.rfind("/")], exist_ok=True)
     all_transactions_df.to_csv(EXISTING_TRANSACTIONS_FILE, index=False)
 
     return all_transactions_df
