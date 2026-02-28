@@ -31,8 +31,22 @@ empty_transaction_df = pd.DataFrame({
 
 
 def local_transaction_clf_wrapper(df: pd.DataFrame) -> pd.DataFrame:
-    """Wrapping import so we don't have to import torch unless necessary"""
-    from .classification import classify_unknowns
+    """Classify transactions locally using the HuggingFace model.
+
+    The torch + transformers packages are optional (not in cloud_requirements.txt
+    to keep the image small).  If they are not installed we emit a warning and
+    return the dataframe unchanged rather than crashing the app.
+    """
+    try:
+        from .classification import classify_unknowns
+    except ImportError:
+        print(
+            "WARNING: 'transformers' / 'torch' are not installed. "
+            "Skipping local classification (use_local_categorization=true is set "
+            "but will be ignored). Install torch and transformers, or set "
+            "use_local_categorization=false in config.json."
+        )
+        return df
     return classify_unknowns(df)
 
 

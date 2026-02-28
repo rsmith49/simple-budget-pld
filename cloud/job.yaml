@@ -1,0 +1,60 @@
+# Cloud Run Job definition — nightly transaction update
+#
+# This job runs scripts/update_transactions.py on a schedule set by
+# Cloud Scheduler (configured in deploy.sh).  It mounts the same GCS bucket
+# as the dashboard service so both share the same transaction CSV.
+#
+# Variables substituted by deploy.sh:
+#   PROJECT_ID, REGION, IMAGE_URL, BUCKET_NAME, SERVICE_ACCOUNT
+
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: budget-update-transactions
+  labels:
+    cloud.googleapis.com/location: REGION
+spec:
+  template:
+    metadata:
+      annotations:
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      taskCount: 1
+      template:
+        spec:
+          serviceAccountName: SERVICE_ACCOUNT
+          maxRetries: 2
+          timeoutSeconds: "300"
+
+          # ── GCS volume ───────────────────────────────────────────────────
+          volumes:
+            - name: budget-data
+              csi:
+                driver: gcsfuse.run.googleapis.com
+                readOnly: false
+                volumeAttributes:
+                  bucketName: BUCKET_NAME
+                  mountOptions: "implicit-dirs,file-mode=0600,dir-mode=0700"
+
+          containers:
+            - image: IMAGE_URL
+              command: ["python", "scripts/update_transactions.py"]
+
+              volumeMounts:
+                - name: budget-data
+                  mountPath: /root/.ry-n-shres-budget-app
+
+              env:
+                - name: CONFIG_PATH
+                  value: /root/.ry-n-shres-budget-app/config.json
+
+                - name: SIMPLEFIN_AUTH
+                  valueFrom:
+                    secretKeyRef:
+                      name: simplefin-auth
+                      key: latest
+
+              resources:
+                limits:
+                  memory: 512Mi
+                  cpu: "1"

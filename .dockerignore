@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+
+# Secrets and local config (never bake credentials into the image)
+.env
+config.json
+
+# Python byte-code and caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local transaction cache (lives in GCS in cloud deployments)
+~/.ry-n-shres-budget-app/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# macOS
+.DS_Store
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Test output
+htmlcov/
+.coverage
