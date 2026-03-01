@@ -1,0 +1,83 @@
+# Cloud Run service definition — budget dashboard
+#
+# Variables to substitute before applying (done automatically by deploy.sh):
+#   PROJECT_ID   — your GCP project ID
+#   REGION       — Cloud Run region, e.g. us-central1
+#   IMAGE_URL    — full Artifact Registry image URL
+#   BUCKET_NAME  — GCS bucket for persistent data
+#   SERVICE_ACCOUNT — service-account email
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: budget-dashboard
+  labels:
+    cloud.googleapis.com/location: REGION
+  annotations:
+    # Scaling policy lives on the Service, not the Revision template.
+    # Keep one instance warm to avoid cold-start latency for a personal app.
+    # Set minScale to "0" to scale fully to zero (saves cost, slower first load).
+    run.googleapis.com/minScale: "1"
+    run.googleapis.com/maxScale: "2"
+spec:
+  template:
+    metadata:
+      annotations:
+        # gen2 execution environment is required for Cloud Storage FUSE mounts.
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: SERVICE_ACCOUNT
+
+      # ── GCS volume (transactions CSV + config.json live here) ──────────────
+      volumes:
+        - name: budget-data
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            readOnly: false
+            volumeAttributes:
+              bucketName: BUCKET_NAME
+              # Improve throughput for the CSV reads/writes.
+              mountOptions: "implicit-dirs,file-mode=0600,dir-mode=0700"
+
+      containers:
+        - image: IMAGE_URL
+          ports:
+            - containerPort: 8080
+
+          # ── Volume mount ──────────────────────────────────────────────────
+          volumeMounts:
+            - name: budget-data
+              # Must match the hardcoded data dir in src/transactions/selection.py
+              mountPath: /root/.ry-n-shres-budget-app
+
+          # ── Environment variables ─────────────────────────────────────────
+          env:
+            # Tell the app where config.json lives (inside the mounted bucket).
+            # Read by src/utils.get_config_path(); falls back to ./config.json
+            # for local dev when this variable is not set.
+            - name: CONFIG_PATH
+              value: /root/.ry-n-shres-budget-app/config.json
+
+            # Dashboard password — stored in Secret Manager.
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: budget-app-password
+                  key: latest
+
+            # SimpleFin credentials — stored in Secret Manager.
+            - name: SIMPLEFIN_AUTH
+              valueFrom:
+                secretKeyRef:
+                  name: simplefin-auth
+                  key: latest
+
+          # ── Resource limits ───────────────────────────────────────────────
+          resources:
+            limits:
+              memory: 512Mi
+              cpu: "1"
+
+  traffic:
+    - percent: 100
+      latestRevision: true

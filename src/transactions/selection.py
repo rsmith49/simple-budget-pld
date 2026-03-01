@@ -31,8 +31,22 @@ empty_transaction_df = pd.DataFrame({
 
 
 def local_transaction_clf_wrapper(df: pd.DataFrame) -> pd.DataFrame:
-    """Wrapping import so we don't have to import torch unless necessary"""
-    from .classification import classify_unknowns
+    """Classify transactions locally using the HuggingFace model.
+
+    The torch + transformers packages are optional (not in cloud_requirements.txt
+    to keep the image small).  If they are not installed we emit a warning and
+    return the dataframe unchanged rather than crashing the app.
+    """
+    try:
+        from .classification import classify_unknowns
+    except ImportError:
+        print(
+            "WARNING: 'transformers' / 'torch' are not installed. "
+            "Skipping local classification (use_local_categorization=true is set "
+            "but will be ignored). Install torch and transformers, or set "
+            "use_local_categorization=false in config.json."
+        )
+        return df
     return classify_unknowns(df)
 
 
@@ -86,6 +100,30 @@ def get_transaction_method() -> GetTransactionsFnType:
         method_name = TransactionMethod.NONE
 
     return METHOD_MAP[method_name]
+
+
+def read_cached_transactions() -> pd.DataFrame:
+    """Read the locally-cached transactions CSV without triggering an API pull.
+
+    In the cloud deployment the dashboard calls this function so it never makes
+    outbound API requests itself.  The nightly Cloud Run Job calls
+    ``maybe_pull_latest_transactions()`` to keep the CSV fresh.
+
+    Raises
+    ------
+    FileNotFoundError
+        When no CSV exists yet.  Run the update job first:
+        ``gcloud run jobs execute budget-update-transactions --region=<REGION>``
+    """
+    try:
+        df = pd.read_csv(EXISTING_TRANSACTIONS_FILE)
+        df["date"] = df["date"].astype(str)
+        return df
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"No transaction data found at {EXISTING_TRANSACTIONS_FILE}. "
+            "Run the update job to fetch initial data."
+        )
 
 
 def maybe_pull_latest_transactions() -> pd.DataFrame:

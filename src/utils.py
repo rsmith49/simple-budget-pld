@@ -11,23 +11,59 @@ ENV_TO_CONFIG_MAP = {
     "GOOGLE_BUDGET_SPREADSHEET_ID": "budget_spreadsheet_id",
 }
 
+# Default config used when no config.json exists (e.g. first cloud start).
+# Also imported by st_dashboard.py to seed the in-app config editor.
+DEFAULT_CONFIG = {
+    "settings": {
+        "use_local_categorization": False,
+        "transformations": ["add_month", "add_cat_1", "add_cat_2", "important_cols"],
+        "remove_transactions": [],
+        "custom_category_map": {},
+        "category_renaming_map": {},
+    }
+}
 
 _config = None
 
 
+def get_config_path() -> str:
+    """Returns the path to config.json.
+
+    In cloud deployments set CONFIG_PATH to the file inside the GCS-mounted
+    data directory, e.g. /root/.ry-n-shres-budget-app/config.json.
+    Falls back to ./config.json for local development.
+    """
+    return os.environ.get("CONFIG_PATH", "config.json")
+
+
 def get_config() -> dict:
-    """Returns the Config based on the default Config path"""
+    """Returns the loaded config, reading from disk on first call."""
     global _config
 
     if _config is None:
-        with open('config.json') as config_file:
-            _config = json.load(config_file)
+        config_path = get_config_path()
+        try:
+            with open(config_path) as config_file:
+                _config = json.load(config_file)
+        except FileNotFoundError:
+            # First-run in cloud: no config.json yet.  Use defaults and let
+            # the user create one via the in-app config editor.
+            _config = DEFAULT_CONFIG.copy()
 
         for env_var_name, config_key in ENV_TO_CONFIG_MAP.items():
             if env_var_name in os.environ:
                 _config[config_key] = os.environ[env_var_name]
 
     return _config
+
+
+def reload_config() -> None:
+    """Clear the in-memory config cache so the next get_config() re-reads disk.
+
+    Call this after saving an updated config.json through the dashboard UI.
+    """
+    global _config
+    _config = None
 
 
 def iso_to_epoch(date_str: str) -> int:

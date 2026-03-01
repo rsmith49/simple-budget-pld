@@ -1,4 +1,5 @@
 import altair as alt
+import json
 import os
 import pandas as pd
 import streamlit as st
@@ -7,8 +8,6 @@ from typing import List
 
 from datetime import datetime
 from dotenv import load_dotenv
-from plaid.api_client import ApiClient
-from plaid.exceptions import ApiException
 from traceback import format_exc
 from urllib.error import URLError
 
@@ -16,19 +15,52 @@ sys.path.append(os.getcwd())
 load_dotenv()
 
 from src.budget import Budget
-from src.transactions.selection import maybe_pull_latest_transactions
+from src.transactions.selection import maybe_pull_latest_transactions, read_cached_transactions
 from src.transactions.user_modifications import transform_pipeline
 from src.views import top_vendors
-from src.utils import get_config
+from src.utils import DEFAULT_CONFIG, get_config, get_config_path, reload_config
 
 st.set_page_config(initial_sidebar_state="collapsed")
 
 
-@st.cache(
-    hash_funcs={ApiClient: lambda *args, **kwargs: 0}
-)
+# ── Authentication ─────────────────────────────────────────────────────────────
+
+def check_password() -> bool:
+    """Return True when the user is authenticated (or no password is configured).
+
+    Set the APP_PASSWORD environment variable (via a Cloud Run secret) to
+    enable password protection.  When the variable is absent the app runs
+    without authentication, which is fine for local development.
+    """
+    app_password = os.environ.get("APP_PASSWORD")
+    if not app_password:
+        return True  # No auth configured — local dev mode
+
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.title("Budget Dashboard")
+    st.markdown("Enter the password to continue.")
+
+    with st.form("login_form"):
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
+
+    if submitted:
+        if password == app_password:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password. Please try again.")
+
+    return False
+
+
+# ── Data loading ───────────────────────────────────────────────────────────────
+
+@st.cache_data
 def get_transaction_data():
-    all_transactions_df = maybe_pull_latest_transactions()
+    all_transactions_df = read_cached_transactions()
 
     # Fix for Streamlit Cache issues
     for col in ["payment_meta", "location"]:
@@ -39,12 +71,90 @@ def get_transaction_data():
     return all_transactions_df
 
 
+# ── Config editor ──────────────────────────────────────────────────────────────
+
+def _render_config_editor() -> None:
+    """Sidebar panel for editing config.json in-place.
+
+    When running on Cloud Run the config file lives inside the GCS-mounted
+    directory (CONFIG_PATH env var).  Saving here writes directly to GCS so
+    the change is durable across container restarts.
+    """
+    with st.sidebar.expander("Edit Config"):
+        config_path = get_config_path()
+
+        # Load current content (show sample if file not yet created)
+        try:
+            with open(config_path) as f:
+                current_content = f.read()
+        except FileNotFoundError:
+            st.warning(
+                f"Config file not found at `{config_path}`. "
+                "Showing defaults — click **Save** to create it."
+            )
+            current_content = json.dumps(DEFAULT_CONFIG, indent=2)
+
+        new_content = st.text_area(
+            "config.json",
+            value=current_content,
+            height=420,
+            help=(
+                "Edit your budget configuration here. "
+                "Click **Save** to persist and reload."
+            ),
+        )
+
+        col_save, col_clear = st.columns(2)
+        with col_save:
+            if st.button("Save", type="primary", use_container_width=True):
+                try:
+                    json.loads(new_content)  # Validate JSON before writing
+                    with open(config_path, "w") as f:
+                        f.write(new_content)
+                    reload_config()
+                    st.cache_data.clear()
+                    st.success("Saved! Reload the page to apply changes.")
+                except json.JSONDecodeError as exc:
+                    st.error(f"Invalid JSON — {exc}")
+                except OSError as exc:
+                    st.error(f"Could not write file — {exc}")
+
+        with col_clear:
+            if st.button("Reload Data", use_container_width=True):
+                st.cache_data.clear()
+                reload_config()
+                st.rerun()
+
+
+# ── Visualization helpers ──────────────────────────────────────────────────────
+
+def _render_refresh_button() -> None:
+    """Sidebar button that pulls the latest transactions on demand.
+
+    In the cloud deployment, data is normally refreshed by the nightly Cloud
+    Run Job.  This button is a convenience escape-hatch — useful when running
+    locally or when you want fresh data without waiting for the scheduler.
+    """
+    st.sidebar.divider()
+    if st.sidebar.button("Fetch latest transactions", use_container_width=True):
+        with st.sidebar.status("Pulling transactions…"):
+            try:
+                maybe_pull_latest_transactions()
+                st.cache_data.clear()
+            except Exception as exc:
+                st.sidebar.error(f"Pull failed: {exc}")
+                return
+        st.sidebar.success("Done — reloading data.")
+        st.rerun()
+
+
 def write_df(df: pd.DataFrame):
-    """Helper function to st.write a DF with amount stylized to dollars"""
+    """Write a DataFrame with dollar-formatted amount columns."""
     st.dataframe(
         df.style.format({
             col_name: "{:,.2f}"
             for col_name in ["amount", "Total Spent"]
+            if col_name in df.columns
         })
     )
 
@@ -204,6 +314,13 @@ def monthly_spending_summary(df: pd.DataFrame, date_inc: DateInc) -> pd.DataFram
 
 
 def main():
+    if not check_password():
+        st.stop()
+        return
+
+    _render_config_editor()
+    _render_refresh_button()
+
     try:
         df = get_transaction_data().copy()
         df = transform_pipeline(df)
@@ -259,7 +376,7 @@ def main():
         curr_date = st.selectbox(
             f"Pick a {date_inc.label}",
             options=available_date_incs,
-            format_func=lambda label: f"{label}      ({df[df[date_inc.key] == label]['amount'].sum():,.2f})"
+            format_func=lambda label: f"{label}      ({df[df[date_inc.key] == label]['amount'].sum():,.2f})"
         )
         single_inc_spending_summary(
             df,
@@ -271,7 +388,6 @@ def main():
         st.write(f"## {date_inc.label}ly Spending History")
         history_df = df_for_certain_categories(df)
         st.write(f"Total Spent: ${history_df['amount'].sum():,.2f}")
-        # st.bar_chart(history_df.groupby(date_inc_key).sum("amount").sort_index(ascending=False))
         st.bar_chart(monthly_spending_summary(history_df, date_inc))
 
         st.write(f"## Most Expensive Single {date_inc.label} Categories")
@@ -293,10 +409,20 @@ def main():
         st.error(
             """
             **This demo requires internet access.**
-    
+
             Connection error: %s
         """
             % e.reason
+        )
+
+    except FileNotFoundError as e:
+        st.error(
+            "No transaction data found. "
+            "Run the update job to fetch your initial transactions:\n\n"
+            "```\n"
+            "gcloud run jobs execute budget-update-transactions --region=<REGION>\n"
+            "```\n\n"
+            f"Details: {e}"
         )
 
     except Exception as e:
