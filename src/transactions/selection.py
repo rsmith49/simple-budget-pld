@@ -102,6 +102,30 @@ def get_transaction_method() -> GetTransactionsFnType:
     return METHOD_MAP[method_name]
 
 
+def read_cached_transactions() -> pd.DataFrame:
+    """Read the locally-cached transactions CSV without triggering an API pull.
+
+    In the cloud deployment the dashboard calls this function so it never makes
+    outbound API requests itself.  The nightly Cloud Run Job calls
+    ``maybe_pull_latest_transactions()`` to keep the CSV fresh.
+
+    Raises
+    ------
+    FileNotFoundError
+        When no CSV exists yet.  Run the update job first:
+        ``gcloud run jobs execute budget-update-transactions --region=<REGION>``
+    """
+    try:
+        df = pd.read_csv(EXISTING_TRANSACTIONS_FILE)
+        df["date"] = df["date"].astype(str)
+        return df
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"No transaction data found at {EXISTING_TRANSACTIONS_FILE}. "
+            "Run the update job to fetch initial data."
+        )
+
+
 def maybe_pull_latest_transactions() -> pd.DataFrame:
     config = get_config()
 

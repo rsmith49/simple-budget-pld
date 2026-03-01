@@ -15,10 +15,10 @@ sys.path.append(os.getcwd())
 load_dotenv()
 
 from src.budget import Budget
-from src.transactions.selection import maybe_pull_latest_transactions
+from src.transactions.selection import read_cached_transactions
 from src.transactions.user_modifications import transform_pipeline
 from src.views import top_vendors
-from src.utils import get_config, get_config_path, reload_config
+from src.utils import DEFAULT_CONFIG, get_config, get_config_path, reload_config
 
 st.set_page_config(initial_sidebar_state="collapsed")
 
@@ -60,8 +60,9 @@ def check_password() -> bool:
 
 @st.cache_data
 def get_transaction_data():
-    all_transactions_df = maybe_pull_latest_transactions()
+    all_transactions_df = read_cached_transactions()
 
+    # Fix for Streamlit Cache issues
     for col in ["payment_meta", "location"]:
         if col in all_transactions_df.columns:
             all_transactions_df = all_transactions_df.drop(col, axis=1)
@@ -87,23 +88,11 @@ def _render_config_editor() -> None:
             with open(config_path) as f:
                 current_content = f.read()
         except FileNotFoundError:
-            current_content = json.dumps({
-                "settings": {
-                    "use_local_categorization": False,
-                    "transformations": [
-                        "add_month", "add_cat_1", "add_cat_2", "important_cols"
-                    ],
-                    "remove_transactions": [],
-                    "custom_category_map": {},
-                    "category_renaming_map": {},
-                    "default_categories_to_ignore": ["Income"],
-                },
-                "budget": {
-                    "total": 5000,
-                    "period": {"default": "month"},
-                    "categories": {},
-                },
-            }, indent=2)
+            st.warning(
+                f"Config file not found at `{config_path}`. "
+                "Showing defaults — click **Save** to create it."
+            )
+            current_content = json.dumps(DEFAULT_CONFIG, indent=2)
 
         new_content = st.text_area(
             "config.json",
@@ -403,6 +392,16 @@ def main():
             Connection error: %s
         """
             % e.reason
+        )
+
+    except FileNotFoundError as e:
+        st.error(
+            "No transaction data found. "
+            "Run the update job to fetch your initial transactions:\n\n"
+            "```\n"
+            "gcloud run jobs execute budget-update-transactions --region=<REGION>\n"
+            "```\n\n"
+            f"Details: {e}"
         )
 
     except Exception as e:

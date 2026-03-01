@@ -51,6 +51,8 @@ spec:
           # ── Environment variables ─────────────────────────────────────────
           env:
             # Tell the app where config.json lives (inside the mounted bucket).
+            # Read by src/utils.get_config_path(); falls back to ./config.json
+            # for local dev when this variable is not set.
             - name: CONFIG_PATH
               value: /root/.ry-n-shres-budget-app/config.json
 

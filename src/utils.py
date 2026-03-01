@@ -12,7 +12,8 @@ ENV_TO_CONFIG_MAP = {
 }
 
 # Default config used when no config.json exists (e.g. first cloud start).
-_DEFAULT_CONFIG = {
+# Also imported by st_dashboard.py to seed the in-app config editor.
+DEFAULT_CONFIG = {
     "settings": {
         "use_local_categorization": False,
         "transformations": ["add_month", "add_cat_1", "add_cat_2", "important_cols"],
@@ -47,7 +48,7 @@ def get_config() -> dict:
         except FileNotFoundError:
             # First-run in cloud: no config.json yet.  Use defaults and let
             # the user create one via the in-app config editor.
-            _config = _DEFAULT_CONFIG.copy()
+            _config = DEFAULT_CONFIG.copy()
 
         for env_var_name, config_key in ENV_TO_CONFIG_MAP.items():
             if env_var_name in os.environ:
