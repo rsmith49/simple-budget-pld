@@ -16,6 +16,7 @@ def tmp_config(transformations=None, remove_transactions=None, custom_category_m
             transformations=transformations,
             remove_transactions=remove_transactions,
             custom_category_map=custom_category_map,
+            category_renaming_map={},
         )
     }
 
