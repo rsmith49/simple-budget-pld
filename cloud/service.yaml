@@ -13,16 +13,18 @@ metadata:
   name: budget-dashboard
   labels:
     cloud.googleapis.com/location: REGION
+  annotations:
+    # Scaling policy lives on the Service, not the Revision template.
+    # Keep one instance warm to avoid cold-start latency for a personal app.
+    # Set minScale to "0" to scale fully to zero (saves cost, slower first load).
+    run.googleapis.com/minScale: "1"
+    run.googleapis.com/maxScale: "2"
 spec:
   template:
     metadata:
       annotations:
         # gen2 execution environment is required for Cloud Storage FUSE mounts.
         run.googleapis.com/execution-environment: gen2
-        # Keep one instance warm to avoid cold-start latency for a personal app.
-        # Remove or set to "0" to scale fully to zero (saves cost, slower first load).
-        run.googleapis.com/minScale: "1"
-        run.googleapis.com/maxScale: "2"
     spec:
       serviceAccountName: SERVICE_ACCOUNT
 
