@@ -15,7 +15,7 @@ sys.path.append(os.getcwd())
 load_dotenv()
 
 from src.budget import Budget
-from src.transactions.selection import read_cached_transactions
+from src.transactions.selection import maybe_pull_latest_transactions, read_cached_transactions
 from src.transactions.user_modifications import transform_pipeline
 from src.views import top_vendors
 from src.utils import DEFAULT_CONFIG, get_config, get_config_path, reload_config
@@ -127,6 +127,26 @@ def _render_config_editor() -> None:
 
 
 # ── Visualization helpers ──────────────────────────────────────────────────────
+
+def _render_refresh_button() -> None:
+    """Sidebar button that pulls the latest transactions on demand.
+
+    In the cloud deployment, data is normally refreshed by the nightly Cloud
+    Run Job.  This button is a convenience escape-hatch — useful when running
+    locally or when you want fresh data without waiting for the scheduler.
+    """
+    st.sidebar.divider()
+    if st.sidebar.button("Fetch latest transactions", use_container_width=True):
+        with st.sidebar.status("Pulling transactions…"):
+            try:
+                maybe_pull_latest_transactions()
+                st.cache_data.clear()
+            except Exception as exc:
+                st.sidebar.error(f"Pull failed: {exc}")
+                return
+        st.sidebar.success("Done — reloading data.")
+        st.rerun()
+
 
 def write_df(df: pd.DataFrame):
     """Write a DataFrame with dollar-formatted amount columns."""
@@ -299,6 +319,7 @@ def main():
         return
 
     _render_config_editor()
+    _render_refresh_button()
 
     try:
         df = get_transaction_data().copy()
